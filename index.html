@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.8/css/materialize.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <style>
+        body {
+            background: #f2f2f2;
+        }
+    </style>
+
+</head>
+<body>
+
+<div class="container">
+
+    <div id="boards"></div>
+
+    <div id="lists"></div>
+
+    <div id="cards"></div>
+
+</div>
+
+<script src="http://code.jquery.com/jquery-1.7.1.min.js"></script>
+<script src="https://api.trello.com/1/client.js?key=632fd2bbcb5d12d6a3ab588266ce8d63"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.8/js/materialize.min.js"></script>
+
+<script>
+
+    var app = {
+
+        me: {},
+
+        current_board_id: "",
+
+        current_list_id: "",
+
+        display_a_list: function (list, parent_div, li_class) {
+
+            // get and clear the cards div
+            parent_div.html('<div class="progress"><div class="indeterminate"></div></div>');
+
+            var list_dom = $('<ul>');
+
+            // generate link for each element
+            for (var i = 0; i < list.length; i++) {
+                var item = list[i];
+                list_dom.append(
+                        $("<li>").append(
+                                $("<a>", {
+                                    "data-item-id": item.id,
+                                    class: li_class,
+                                    href: "#"
+                                }).text(item.name)
+                        )
+                );
+            }
+
+            parent_div.html('');
+            parent_div.html(list_dom);
+        },
+
+        authenticationSuccess: function () {
+
+            // get my own info
+            Trello.get('/member/me', function (data) {
+                app.me = data;
+                app.me.recently_created_cards = [];
+
+                // get cards I created
+                Trello.get('members/' + app.me.id + '/actions?filter=createCard&member=false&memberCreator=false&fields=data&limit=500',
+                        function (actions) {
+                            console.log(actions);
+                            for (var i = 0; i < actions.length; i++) {
+                                app.me.recently_created_cards.push(actions[i].data.card.id)
+                            }
+
+                        }
+                )
+
+            });
+
+            // get and display boards
+            Trello.get('/member/me/boards', function (data) {
+
+                app.display_a_list(data, $('#boards'), "choose-board");
+
+                // add listener
+                $('a.choose-board').click(function (e) {
+                    app.current_board_id = $(this).attr('data-item-id');
+                    app.displayLists();
+                });
+
+            });
+
+        },
+
+        authenticationFailure: function () {
+            console.log('Failed authentication');
+        },
+
+        displayLists: function () {
+
+            // get current board id
+            var board_id = app.current_board_id;
+
+            // reset list id
+            app.current_list_id = '';
+
+            // get the data and display lists
+            Trello.get('boards/' + board_id + '/lists', function (data) {
+                app.display_a_list(data, $('#lists'), "choose-list");
+
+                // add listener
+                $('a.choose-list').click(function (e) {
+                    app.current_list_id = $(this).attr('data-item-id');
+                    app.displayCards();
+                    e.preventDefault();
+                });
+
+                app.displayCards();
+
+            });
+
+        },
+
+        displayCards: function () {
+
+            // get and clear the cards div
+            var $cards = $('#cards');
+            $cards.html('<div class="progress"><div class="indeterminate"></div></div>');
+
+            // get list id and display
+            var list_id = app.current_list_id;
+            if (list_id) {
+                Trello.get('lists/' + list_id + '/cards', function (cards_list) {
+
+                    // sort the list by vote count
+                    cards_list = cards_list.sort(function (a, b) {
+                        return b.badges.votes - a.badges.votes;
+                    });
+
+                    // log sample card
+                    console.log(cards_list[0]);
+
+                    // display cards
+                    for (var i = 0; i < cards_list.length; i++) {
+
+                        var card = cards_list[i];
+
+                        // create the card
+                        var $card = $('<div>', {'class': 'card'}).append(
+                                $('<div>', {'class': 'card-content'}).append(
+                                        $('<span>', {'class': 'card-title truncate'}).text(card.name)
+                                ).append(
+                                        $('<p>', {'class': 'card-content-text'}).text(
+                                                card.badges.votes + " "
+                                        ).append(
+                                                $('<i>', {'class': 'tiny material-icons'}).text('thumb_up')
+                                        )
+                                )
+                        ).append(
+                                $('<div>', {'class': 'card-action'}).append(
+                                        $('<a>', {
+                                            'href': card.shortUrl,
+                                            'target': '_blank'
+                                        }).text(
+                                                'View in Trello'
+                                        )
+                                ).append(
+                                        (function () {
+
+                                            var $button = $('<a>', {
+                                                'class': ' waves-effect',
+                                                'data-card-id': card.id
+                                            });
+
+                                            if (card.idMembersVoted.indexOf(app.me.id) != -1) {
+                                                $button.text('Remove Upvote').click(function (e) {
+                                                    app.removeUpVote($(this).attr('data-card-id'))
+                                                }).addClass("waves-teal btn-flat");
+                                            }else{
+                                                $button.html('<i class="material-icons left">thumb_up</i> Upvote').click(function (e) {
+                                                    app.upVote($(this).attr('data-card-id'))
+                                                }).addClass("waves-light btn");
+                                            }
+
+                                            return $button
+
+                                        })()
+                                )
+                        );
+
+                        $cards.append($card)
+
+                    }
+
+                    // remove loader
+                    $cards.find('div.progress').remove();
+
+                });
+            } else {
+                $cards.html('');
+            }
+
+        },
+
+        upVote: function (card_id) {
+            Trello.post('cards/' + card_id + '/membersVoted', {value: app.me.id},
+                    function () {
+                        Materialize.toast('Upvoted!', 2000);
+                        app.displayCards();
+                    },
+                    function () {
+                        Materialize.toast('There was an error.', 2000);
+                    }
+            )
+        },
+
+        removeUpVote: function (card_id) {
+            Trello.delete('cards/' + card_id + '/membersVoted/'+app.me.id,
+                    function () {
+                        Materialize.toast('Removed vote', 2000);
+                        app.displayCards();
+                    },
+                    function () {
+                        Materialize.toast('There was an error.', 2000);
+                    }
+            )
+        },
+
+    };
+
+    // Auth
+    Trello.authorize({
+        type: 'popup',
+        name: 'Getting Started Application',
+        scope: {
+            read: 'true',
+            write: 'true'
+        },
+        expiration: 'never',
+        success: app.authenticationSuccess,
+        error: app.authenticationFailure
+    });
+
+</script>
+</body>
+</html>

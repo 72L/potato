@@ -141,9 +141,13 @@
             if (list_id) {
                 Trello.get('lists/' + list_id + '/cards', function (cards_list) {
 
-                    // sort the list by vote count
+                    // sort the list by vote count and then my last activity
                     cards_list = cards_list.sort(function (a, b) {
-                        return b.badges.votes - a.badges.votes;
+                        if (b.badges.votes != a.badges.votes){
+                            return (b.badges.votes > a.badges.votes);
+                        }else{
+                            return (b.dateLastActivity > a.dateLastActivity);
+                        }
                     });
 
                     // log sample card
